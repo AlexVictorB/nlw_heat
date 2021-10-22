@@ -2,86 +2,86 @@ import { createContext, ReactNode, useEffect, useState } from "react";
 import { api } from "../services/api";
 
 type User = {
-    id: string,
-    name: string,
-    login: string,
-    avatar_url: string
+  id: string;
+  name: string;
+  login: string;
+  avatar_url: string;
 }
 
 type AuthContextData = {
-    user: User | null,
-    signInUrl: string,
+  user: User | null;
+  signInUrl: string;
+  signOut: () => void;
 }
-
 
 export const AuthContext = createContext({} as AuthContextData)
 
-
 type AuthProvider = {
-    children: ReactNode;
+  children: ReactNode;
 }
 
 type AuthResponse = {
-    token: string,
-    user: {
-        id: string,
-        avatar_url: string,
-        name: string,
-        login: string,
-    }
+  token: string;
+  user: {
+    id: string;
+    avatar_url: string;
+    name: string;
+    login: string;
+  }
 }
 
 export function AuthProvider(props: AuthProvider) {
+  const [user, setUser] = useState<User | null>(null)
 
-    const [user, setUser] = useState<User | null>(null)
+  const signInUrl = `https://github.com/login/oauth/authorize?scope=user&client_id=8a1484430018858e7e74`;
 
-    const signInUrl = `https://github.com/login/oauth/authorize?scope=user&client_id=8a1484430018858e7e74`
+  async function signIn(githubCode: string) {
+    const response = await api.post<AuthResponse>('authenticate', {
+      code: githubCode,
+    })
 
-    async function signIn(githubCode: string) {
+    const { token, user } = response.data
 
-        const response = await api.post<AuthResponse>('authenticate', {
-            code: githubCode,
-        })
+    localStorage.setItem('@dowhile:token', token)
 
-        const { token, user } = response.data
+    api.defaults.headers.common.authorization = `Bearer ${token}`;
 
-        localStorage.setItem('@dowhile:token', token)
+    setUser(user)
+  }
 
-        setUser(user)
+  function signOut() {
+    setUser(null)
+    localStorage.removeItem('@dowhile:token')
+  }
 
+  useEffect(() => {
+    const token = localStorage.getItem('@dowhile:token')
+
+    if (token) {
+      api.defaults.headers.common.authorization = `Bearer ${token}`;
+
+      api.get<User>('profile').then(response => {
+        setUser(response.data)
+      })
     }
+  }, [])
 
-    useEffect(() => {
-        const token = localStorage.getItem('@dowhile:token')
+  useEffect(() => {
+    const url = window.location.href;
+    const hasGithubCode = url.includes('?code=');
 
-        if(token){
-            api.get('profile').then(response => {
-                console.log(response.data)
-            })
-        }
+    if (hasGithubCode) {
+      const [urlWithoutCode, githubCode] = url.split('?code=')
 
-    }, [])
+      window.history.pushState({}, '', urlWithoutCode);
 
-    useEffect(() => {
-        const url = window.location.href
-        const hasGithubCode = url.includes('?code=')
+      signIn(githubCode)
+    }
+  }, [])
 
-        if(hasGithubCode) {
-            const [urlWithoutCode, githubCode] = url.split('?code=')
-
-            console.log({urlWithoutCode, githubCode});
-
-            window.history.pushState({}, '', urlWithoutCode)
-
-            signIn(githubCode)
-            
-        }
-    }, [])
-
-
-    return (
-        <AuthContext.Provider value={{ signInUrl, user }}>
-
-        </AuthContext.Provider>
-    )
+  return (
+    <AuthContext.Provider value={{ signInUrl, user, signOut }}>
+      {props.children}
+    </AuthContext.Provider>
+  );
 }
